@@ -1,20 +1,18 @@
-﻿name: CI/CD
-
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
-jobs:
-  test_build:
 name: CI/CD
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  deployments: write
 
 jobs:
   test_build:
@@ -31,7 +29,7 @@ jobs:
 
   deploy:
     needs: test_build
-    if: github.ref == "refs/heads/main"
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -42,7 +40,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      - name: Smoke check Vercel secrets
+        run: |
+          [ -n "$VERCEL_TOKEN" ] || (echo "VERCEL_TOKEN missing" && exit 1)
+          [ -n "$VERCEL_ORG_ID" ] || (echo "VERCEL_ORG_ID missing" && exit 1)
+          [ -n "$VERCEL_PROJECT_ID" ] || (echo "VERCEL_PROJECT_ID missing" && exit 1)
+
       - run: npm i -g vercel@latest
-      - run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-      - run: vercel build --prod --token="$VERCEL_TOKEN"
-      - run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+      - name: Verify auth
+        run: vercel whoami --token="$VERCEL_TOKEN"
+
+      - name: Pull env (prod)
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
+
+      - name: Build with Vercel
+        run: vercel build --prod --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
+
+      - name: Deploy prebuilt to Production
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
+
